@@ -1,50 +1,52 @@
-import numpy as np
-import pandas as pd
-from typing import OrderedDict
+
+from random import seed
 from random import randrange
-import math 
+from csv import reader
+import pandas as pd
+import numpy as np
+from statistics import mean
+from numpy import math
+from collections import OrderedDict
 
-def preprocess_data(df):
-    new_columns = df.columns.values
-    for n, column in enumerate(new_columns):
-        new_columns[n] = df.columns.values[n] + " {" + df.iloc[0][column] + "}"
-    new_df = df.drop(df.index[0])
-    new_df.columns = new_columns
-    return new_df.apply(pd.to_numeric)  # convert strings to numbers
+def load(file_path='iris.csv', categorial_target=False, cat_to_bin=False):
+    try:
+        df = pd.read_csv(file_path, header=None)
+        n_samples, n_features = df.shape[0], df.shape[1]
+        df.rename(columns={ df.columns[-1]: "class" }, inplace=True)
+        target_name = df.columns[-1] 
+        target_names = np.unique(df[target_name])
+        if categorial_target:
+            dic = {target_name: {}}
+            for i, c in enumerate(target_names):
+                dic[target_name][c] = i
+            df.replace(dic, inplace=True)
+        if cat_to_bin:
+            df = pd.get_dummies(df)
+        return df
+    except:
+        print("no file found")
+ 
+def shuffle(df):
+    df = df.copy()
+    df = df.set_index(np.random.permutation(df.index)) 
+    df = df.reset_index(drop=True) 
+    return df
 
-def normalize(df):
-    """
-    features_name = df.columns[:-1]
-    """
-    result = df.copy()
-    for feature_name in df.columns[:-1]:
-        df[feature_name] = df[feature_name].astype(float)
-        max_value = df[feature_name].max()
-        min_value = df[feature_name].min()
-        result[feature_name] = (df[feature_name] - min_value) / (max_value - min_value)
-    return result
-
-def cross_validation_split(dataset, folds=5):
+# Split a dataset into k folds
+def cross_validation_split(df, folds=10, is_shuffle=True):
     dataset_split = []
-    df_copy = dataset
+    
+    df_copy = shuffle(df) if is_shuffle else df
     fold_size = int(df_copy.shape[0] / folds)
     training_dataset = []
     testing_dataset = []
-    # for loop to save each fold
     for i in range(folds):
         fold = []
-        # while loop to add elements to the folds
         while len(fold) < fold_size:
-            # select a random element
             r = randrange(df_copy.shape[0])
-            # determine the index of this element 
             index = df_copy.index[r]
-            # save the randomly selected line 
             fold.append(df_copy.loc[[index]])
-            # delete the randomly selected line from
-            # dataframe not to select agai
             df_copy = df_copy.drop(index)
-        # save the fold     
         dataset_split.append(pd.concat(fold))
     for i in range(folds):
         r = list(range(folds))
@@ -60,96 +62,147 @@ def cross_validation_split(dataset, folds=5):
         testing_dataset.append(testing_data)
     return training_dataset, testing_dataset
 
+def get_X_y(df):
+    """
+    X: features in dataFrame format
+    y: target in dataFrame format
+    """
+    X = df.iloc[:, :-1]
+    y = df.iloc[:, -1]
+    return X, y
 
-class BinaryTreeNode:
+def normalize(df):
+    """
+    normalize continous feature values
+    """
+    result = df.copy()
+    for feature_name in df.columns[:-1]:
+        df[feature_name] = df[feature_name].astype(float)
+        max_value = df[feature_name].max()
+        min_value = df[feature_name].min()
+        result[feature_name] = (df[feature_name] - min_value) / (max_value - min_value)
+    return result
+
+class DecisonTreeNode:
+    def __init__(self, data, depth, max_depth, min_size, method="entropy"):
+        self.data = data
+        self.split_col = None
+        self.split_val = None
+        self.left = None
+        self.right = None
+        self.max_depth = max_depth
+        self.min_size = min_size
+        self.depth = depth
+        self.method = method
+        self.is_leaf = False
+    # Split a dataset based on an attribute and an attribute value
+    def divide(self, data, split_col, split_val):
+        left, right = list(), list()
+        for row in data:
+            if row[split_col] < split_val:
+                left.append(row)
+            else:
+                right.append(row)
+        return left, right
+    def entropy(self, target_col):
+        elements,counts = np.unique(target_col,return_counts = True)
+        entropy = np.sum([(-counts[i]/np.sum(counts))*np.log2(counts[i]/np.sum(counts)) for i in range(len(elements))])
+        return entropy
+    def cal_sse(self, target_col):
+        y_mean = mean(target_col)
+        sse = np.square(target_col - y_mean).sum()
+        return sse
+    def info_gain(self, groups, class_values):
+        gain = 0.0
+        parent_gain = self.entropy([row[-1] for row in self.data])
+        for class_value in class_values:
+            for group in groups:
+                size = len(group)
+                if size == 0:
+                    continue
+                weight = [row[-1] for row in group].count(class_value) / float(size)
+                gain += (weight * self.entropy([row[-1] for row in group]))
+        return gain
     
-    def __init__(self, x, y, idxs, min_leaf=5):
-        self.x = x 
-        self.y = y
-        self.idxs = idxs 
-        self.min_leaf = min_leaf
-        self.decision_method = decision_method
-        self.row_count = len(idxs)
-        self.col_count = x.shape[1]
-        self.val = np.mean(y[idxs])
-        self.score = float('inf')
-        self.ig = float('-inf')
-        self.find_varsplit()
-        
-    def find_varsplit(self):
-        for c in range(self.col_count): self.find_better_split(c)
-        if self.is_leaf: return
-        x = self.split_col
-        lhs = np.nonzero(x <= self.split)[0]
-        rhs = np.nonzero(x > self.split)[0]
-        self.lhs = BinaryTreeNode(self.x, self.y, self.idxs[lhs], self.min_leaf)
-        self.rhs = BinaryTreeNode(self.x, self.y, self.idxs[rhs], self.min_leaf)
-        
-    def find_better_split(self, var_idx, decision_method="sse"):
-        x = self.x.values[self.idxs, var_idx]
+    # Select the best split point for a dataset
+    def find_best_split(self):
+        class_values = list(set(row[-1] for row in self.data))
+        score, node = 0.0, None
+        for col in range(len(self.data[0])-1):
+            for row in self.data:
+                groups = self.divide(self.data, col, row[col])
+                if self.method == "entropy":
+                    curr_score = self.info_gain(groups, class_values)
+                else: # sse
+                    # decrease in impurity
+                    left, right = 0, 0
+                    curr_score = self.cal_sse([row[-1] for row in self.data])
+                    if groups[0]:
+                        left = self.cal_sse([row[-1] for row in groups[0]]) 
+                    if groups[1]:
+                        right = self.cal_sse([row[-1] for row in groups[1]]) 
+                    curr_score -= left - right
+                if curr_score > score:
+                    self.split_col, self.split_val, score, node = col, row[col], curr_score, groups
+        return {'index':self.split_col, 'value':self.split_val, "score": curr_score, 'groups':node} # value is split_val, index is best_feature, group is left, right list of row index
+    
+    # Create a terminal node value
+    def to_terminal(self):
+        outcomes = [row[-1] for row in self.data]
+        return max(set(outcomes), key=outcomes.count)
+    
+    # Recursively split
+    def split(self):
+        split_info = self.find_best_split()
+        # stopping criterior
+        if not split_info['groups']:
+            self.is_leaf = True
+            return 
+        left, right = split_info['groups']
+        if not left or not right:
+            self.is_leaf = True
+            return 
+        if len(self.data) <= self.min_size:
+            self.is_leaf = True
+            return 
+        if self.depth >= self.max_depth:
+            self.is_leaf = True
 
-        for r in range(self.row_count):
-            lhs = x <= x[r]
-            rhs = x > x[r]
-            if rhs.sum() < self.min_leaf or lhs.sum() < self.min_leaf: continue
-            curr_score = self.sse(lhs, rhs)
-            if curr_score < self.score: 
-                self.var_idx = var_idx
-                self.score = curr_score
-                self.split = x[r]
+            return 
+        if split_info["score"] <= 0:
+            self.is_leaf = True
+            return 
+        # create left, right node
+        self.left = DecisonTreeNode(left, self.depth+1, self.max_depth, self.min_size, self.method)
+        self.right = DecisonTreeNode(right, self.depth+1, self.max_depth, self.min_size, self.method)
+        
+        self.split_col, self.split_val = split_info['index'], split_info['value']
 
-    def sse(self, lhs, rhs):
-        y = self.y[self.idxs]
-        lhs_mean = y[lhs].mean()
-        rhs_mean = y[rhs].mean()
-        lhs_sse = np.square(y[lhs] - lhs_mean).sum()
-        rhs_sse = np.square(y[rhs] - rhs_mean).sum()
-        return lhs_sse + lhs_sse
-                
-    @property
-    def split_col(self): return self.x.values[self.idxs,self.var_idx]
-                
-    @property
-    def is_leaf(self): 
-        if self.decision_method == "ig":
-            return self.ig == float('-inf') 
+        if not self.left or not self.right:
+            self.is_leaf = True
+            return 
+        if self.left:
+            self.left.split()
+        if self.right:
+            self.right.split() 
+    def predict_row(self, x):
+
+        if self.is_leaf: return self.to_terminal()
+        if x[self.split_col] < self.split_val:
+            return self.left.predict_row(x)
         else:
-            return self.score == float('inf')                
+            return self.right.predict_row(x)
+    def predict(self,X_test):
+        return np.array([self.predict_row(x) for x in X_test])
 
-    def predict(self, x):
-        return np.array([self.predict_row(xi) for xi in x])
-
-    def predict_row(self, xi):
-        if self.is_leaf: return self.val
-        node = self.lhs if xi[self.var_idx] <= self.split else self.rhs
-        return node.predict_row(xi)
-
-class DecisionTreeRegressor:
-  def fit(self, X, y, min_leaf = 5, decision_method="sse"):
-    self.dtree = BinaryTreeNode(X, y, np.array(np.arange(len(y))), min_leaf, decision_method)
-    return self
-  
-  def predict(self, X):
-    return self.dtree.predict(X.values)
-
-dataset = pd.read_csv('housing.csv', names=["CRIM", "ZN", "INDUS",  "CHAS", "NOX", "RM", "AGE", "DIS", "RAD", "TAX", "PTRATIO", "B", "LSTAT", "class"]) 
-dataset = pd.read_csv('mushroom.csv', names=list(range(21))+ ["class"]) 
-dataset = dataset[:50]
-# dataset = normalize(dataset)
-# training_dataset = cross_validation_split(dataset, 10)[0]
-# testing_dataset = cross_validation_split(dataset, 10)[1]
-# n_samples = len(dataset)
-# instance = BinaryDecisionTree()
-# training_data, testing_data = training_dataset[0], testing_dataset[0]
-# X = training_data.drop('class', axis=1)
-# y = training_data['class']
-# X_test = testing_data.drop('class', axis=1)
-# regressor = instance.fit(X, y)
-# preds_sse = regressor.predict(X_test)
-# regressor2 = instance.fit(X, y, decision_method="ig")
-# preds_ig = regressor.predict(X_test)
-# # print("preds_sse\n", preds_sse)
-# print("preds_ig\n", preds_ig)
+class DecisionTree:
+    # Build a decision tree
+    def build_tree(self, train, max_depth, min_size, method):
+        self.tree = DecisonTreeNode(train, 1, max_depth, min_size, method)
+        self.tree.split()
+        return self.tree
+    def predict(self, X_test):
+        return self.tree.predict(X_test)
 
 class MultiwayDecisionTree:
     def __init__(self, dataset):
@@ -157,123 +210,82 @@ class MultiwayDecisionTree:
         self.dataset = dataset
 
     def entropy(self,target_col):
-        """
-        Calculate the entropy of a dataset.
-        The only parameter of this function is the target_col parameter which specifies the target column
-        """
         elements,counts = np.unique(target_col,return_counts = True)
         entropy = np.sum([(-counts[i]/np.sum(counts))*np.log2(counts[i]/np.sum(counts)) for i in range(len(elements))])
         return entropy
 
-
-    def InfoGain(self,data,split_attribute_name,target_name="class"):
-        """
-        Calculate the information gain of a dataset. This function takes three parameters:
-        1. data = The dataset for whose feature the IG should be calculated
-        2. split_attribute_name = the name of the feature for which the information gain should be calculated
-        3. target_name = the name of the target feature. The default for this example is "class"
-        """    
-        #Calculate the entropy of the total dataset
-        total_entropy = self.entropy(data[target_name])
-        
-        ##Calculate the entropy of the dataset
-        
-        #Calculate the values and the corresponding counts for the split attribute 
+    def info_gain(self,data,split_attribute_name,target_name="class"):  
+        parent_entropy = self.entropy(data[target_name])
         vals,counts= np.unique(data[split_attribute_name],return_counts=True)
-        
-        #Calculate the weighted entropy
-        Weighted_Entropy = np.sum([(counts[i]/np.sum(counts))*self.entropy(data.where(data[split_attribute_name]==vals[i]).dropna()[target_name]) for i in range(len(vals))])
-        
-        #Calculate the information gain
-        Information_Gain = total_entropy - Weighted_Entropy
-        return Information_Gain
+        weighted_entropy = np.sum([(counts[i]/np.sum(counts))*self.entropy(data.where(data[split_attribute_name]==vals[i]).dropna()[target_name]) for i in range(len(vals))])
+        info_gain = parent_entropy - weighted_entropy
+        return info_gain
 
-    def build_tree(self,data,features,target_attribute_name="class",parent_node_class = None,min_leaf=1):
-
-        #Define the stopping criteria --> If one of this is satisfied, we want to return a leaf node#
         
-        #If all target_values have the same value, return this value
+    def build_tree(self,data,features,target_attribute_name="class",default_class = None,min_leaf=10):
+        # stopping criterier
+        # all target_values have the same value, return this value
         if len(np.unique(data[target_attribute_name])) <= 1:
             return np.unique(data[target_attribute_name])[0]
-        
         elif len(features) == 0:
-            return parent_node_class
+            return default_class
         elif len(data[target_attribute_name]) <= min_leaf:
-            return parent_node_class
-        #If none of the above holds true, grow the tree!
+            return default_class
         else:
-            #Set the default value for this node --> The mode target feature value of the current node
-            parent_node_class = np.unique(data[target_attribute_name])[np.argmax(np.unique(data[target_attribute_name],return_counts=True)[1])]
-            #Select the feature which best splits the dataset
-            item_values = [self.InfoGain(data,feature,target_attribute_name) for feature in features] #Return the information gain values for the features in the dataset
+            # most frequent class of the current node
+            default_class = np.unique(data[target_attribute_name])[np.argmax(np.unique(data[target_attribute_name],return_counts=True)[1])]
+            item_values = [self.info_gain(data,feature,target_attribute_name) for feature in features] 
             best_feature_index = np.argmax(item_values)
             best_feature = features[best_feature_index]
             
-            #Create the tree structure. The root gets the name of the feature (best_feature) with the maximum information
-            #gain in the first run
             multiway_tree = {best_feature:{}}
             
-            
-            #Remove the feature with the best inforamtion gain from the feature space
+            # remove selected feature
             features = [i for i in features if i != best_feature]
             
-            #Grow a branch under the root node for each possible value of the root node feature
-            
+            # grow branches for selected feature
             for value in np.unique(data[best_feature]):
                 value = value
-                #Split the dataset along the value of the feature with the largest information gain and therwith create sub_datasets
-                sub_data = data.where(data[best_feature] == value).dropna()
-                
-                #Call the ID3 algorithm for each of those sub_datasets with the new parameters --> Here the recursion comes in!
-                subtree = self.build_tree(sub_data,features,target_attribute_name,parent_node_class,min_leaf)
-                
-                #Add the sub tree, grown from the sub_dataset to the tree under the root node
+                sub_data = data.where(data[best_feature] == value).dropna()   
+                subtree = self.build_tree(sub_data,features,target_attribute_name,default_class,min_leaf)                
                 multiway_tree[best_feature][value] = subtree
             return multiway_tree    
-
-    def predict(self,query,tree, default=1):
-        """
-        Prediction of a new/unseen query instance. This takes two parameters:
-        1. The query instance as a dictionary of the shape {"feature_name":feature_value,...}
-
-        2. The tree 
-        """
+    
+    def _predict(self,query,tree,default=1):
         for key in list(query.keys()):
             if key in list(tree.keys()):
-                #2.
                 try:
                     result = tree[key][query[key]] 
                 except:
                     return default
-    
-                #3.
                 result = tree[key][query[key]]
-                #4.
                 if isinstance(result,dict):
-                    return self.predict(query,result)
-
+                    return self._predict(query,result)
                 else:
                     return result
 
-    def index_predict(self,data,tree):
-            #Create new query instances by simply removing the target feature column from the original dataset and 
-        #convert it to a dictionary
-        queries = data.iloc[:,:-1].to_dict(orient = "records") # drop target col
-        #Create a empty DataFrame in whose columns the prediction of the tree are stored
-        predicted = pd.DataFrame(columns=["predicted"]) 
-        
-        #Calculate the prediction accuracy
-        for i in range(len(data)):
-            predicted.loc[i,"predicted"] = self.predict(queries[i],tree) 
+    def predict(self,testing_data,tree):
+        queries = testing_data.iloc[:,:-1].to_dict(orient = "records") 
+        predicted = [] 
+        for i in range(len(testing_data)):
+            predicted = predicted.append(self._predict(queries[i],tree)) 
         return predicted
+
 class Evaluate:
-    def get_accuracy(self,data,predicted):  
-        accuracy = np.sum(predicted["predicted"].reset_index(drop=True) == data["class"].reset_index(drop=True))/len(data)*100
-        return accuracy
-        
-    def create_confusion_matrix(self,data,predicted):
-        y_predicted = predicted["predicted"].reset_index(drop=True)
-        y_actual = data["class"].reset_index(drop=True)
+    def get_accuracy(self,y_actual,y_predicted,model_type="classification"): 
+        std = None
+        if model_type == "classification": 
+            accuracy = np.sum(y_predicted == y_actual)/len(y_actual)*100
+            std = np.std(y_predicted == y_actual)*100
+        else: # regressor, use RMSE to evaluate how far 
+            s, n = 0, len(y_actual)
+            for i in range(n):
+                diff = y_actual[i] - y_predicted[i]
+                s += diff ** 2
+            accuracy = np.sqrt(s/n)
+        return accuracy, std
+    
+    def create_confusion_matrix(self,y_actual,y_predicted):
         actual = np.array(y_actual)
         pred = np.array(y_predicted)
         n_classes = np.unique(actual)
@@ -285,7 +297,6 @@ class Evaluate:
         sigma = sum([sum(matrix[imap[i]]) for i in n_classes])
         # Scaffold Statistics Data Structure
         statistics = OrderedDict(((i, {"counts" : OrderedDict(), "stats" : OrderedDict()}) for i in n_classes))
-        # Iterate Through Classes & Compute Statistics
         for i in n_classes:
             loc = matrix[imap[i]][imap[i]]
             row = sum(matrix[imap[i]][:])
@@ -312,5 +323,3 @@ class Evaluate:
         return matrix, statistics
 
             
-
-
