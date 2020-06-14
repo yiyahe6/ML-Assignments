@@ -1,0 +1,46 @@
+kfold
+normalization:
+1. normalize training data
+2. record normalization parameter to normalize test data
+3. esitmate accuracy/error
+
+alpha - learning rate: size of Steps took in any direction
+theta - next step
+    Gadget tells you height = Cost function
+    The direction of your steps = Gradients
+RMSE: Since the errors are squared before they are averaged, the RMSE gives a relatively high weight to large errors. 
+This means the RMSE should be more useful when large errors are particularly undesirable. 
+goal: to miminze cost function
+
+矩阵乘法： http://www.ruanyifeng.com/blog/2015/09/matrix-multiplication.html
+意义：用来代表线性方程
+
+GD目的：
+    https://stats.stackexchange.com/questions/49528/batch-gradient-descent-versus-stochastic-gradient-descent#:~:text=Batch%20gradient%20descent%20computes%20the%20gradient%20using%20the%20whole%20dataset.&text=Additionally%2C%20batch%20gradient%20descent%2C%20given,gradient%20using%20a%20single%20sample.
+    regression explained https://towardsdatascience.com/linear-regression-simplified-ordinary-least-square-vs-gradient-descent-48145de2cf76
+
+linear regression vs GD https://towardsdatascience.com/gradient-descent-from-scratch-e8b75fa986cc
+GD from scratch https://towardsdatascience.com/gradient-descent-in-python-a0d07285742f
+
+Adding the Constant Feature: For every regression problem remember to add a column of ones to your dataset. len = m
+    input_data = np.vstack([x0, x]).T  # 将偏置b作为权向量的第一个分量
+Initialize the least squares error (LSE) regression coefficients wi for the gradient descent algorithm to all zeros i.e., wi = [0, 0, . . . , 0] . len = m
+    error = np.zeros((dim,), dtype=np.float32)
+
+sklearn 验证
+-------
+import numpy as np
+import pandas as pd
+from sklearn import linear_model
+import matplotlib.pyplot as plt
+
+data=pd.read_csv(r'') #Data set attached
+X=data[['Size','Floor','Broadband  Rate']]
+y=data['Rental Price']
+
+#Sklearn Linear Regression
+ols=linear_model.LinearRegression(fit_intercept=True, normalize=False)
+LR=ols.fit(X,y)
+Res_LR=y.values-LR.predict(X) #Residuals 
+print('Intercept', LR.intercept_, 'Weights', LR.coef_)
+“”“”
